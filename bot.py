@@ -1,3 +1,4 @@
+import os
 import random
 from datetime import date, timedelta
 
@@ -20,7 +21,7 @@ from database import (
     get_daily_challenge, save_daily_challenge, get_student_daily_answer,
     save_daily_answer, update_student_streak, get_student_streak,
 )
-from gemini_handler import check_speaking_answer, get_daily_question
+from gemini_handler import check_speaking_answer, check_voice_answer, get_daily_question
 from questions import QUESTIONS
 
 
@@ -367,7 +368,7 @@ async def send_random_question(query, context: ContextTypes.DEFAULT_TYPE):
     question_text = (
         f"📌 Savol: {question['english_question']}\n"
         f"🇺🇿 Tarjima: {question['uzbek_translation']}\n"
-        f"✍️ Javobingizni yozing:"
+        f"✍️ Javob yozing yoki 🎤 ovozli xabar yuboring:"
     )
 
     await query.edit_message_text(question_text)
@@ -388,7 +389,7 @@ async def send_topic_question(query, context: ContextTypes.DEFAULT_TYPE, topic: 
     question_text = (
         f"📌 Savol: {question['english_question']}\n"
         f"🇺🇿 Tarjima: {question['uzbek_translation']}\n"
-        f"✍️ Javobingizni yozing:"
+        f"✍️ Javob yozing yoki 🎤 ovozli xabar yuboring:"
     )
 
     await query.edit_message_text(question_text)
@@ -668,8 +669,129 @@ async def handle_daily_challenge_answer(update: Update, context: ContextTypes.DE
     context.user_data.pop("daily_challenge", None)
 
 
+async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle voice messages - transcribe and evaluate student's spoken answer."""
+    daily_challenge = context.user_data.get("daily_challenge")
+    current_question = context.user_data.get("current_question")
+
+    if not current_question and not daily_challenge:
+        await update.message.reply_text(
+            "Iltimos, avval savol oling! Quyidagi tugmani bosing:",
+            reply_markup=get_main_menu_keyboard(),
+        )
+        return
+
+    telegram_id = update.effective_user.id
+    student = get_student(telegram_id)
+
+    if not student:
+        add_student(telegram_id, update.effective_user.full_name, update.effective_user.username or "")
+        student = get_student(telegram_id)
+
+    # Download voice file
+    voice = update.message.voice
+    file = await context.bot.get_file(voice.file_id)
+    file_path = f"/tmp/voice_{update.effective_user.id}_{voice.file_id}.ogg"
+    await file.download_to_drive(file_path)
+
+    # Send acknowledgment
+    await update.message.reply_text("🎤 Ovozingiz qabul qilindi! Tahlil qilinmoqda...")
+
+    # Send typing action while waiting for AI response
+    await update.message.chat.send_action("typing")
+
+    if daily_challenge:
+        # Handle daily challenge voice answer
+        challenge_date = daily_challenge["date"]
+
+        # Double-check they haven't already answered
+        existing = get_student_daily_answer(student["id"], challenge_date)
+        if existing:
+            os.remove(file_path)
+            await update.message.reply_text(
+                "Bugun allaqachon javob berdingiz! Ertaga yangi savol keladi \U0001f31f",
+                reply_markup=get_main_menu_keyboard()
+            )
+            context.user_data.pop("daily_challenge", None)
+            return
+
+        # Get AI feedback
+        ai_feedback = await check_voice_answer(
+            daily_challenge["english_question"],
+            daily_challenge["uzbek_translation"],
+            file_path,
+            daily_challenge["example_answer"],
+        )
+
+        # Get score from feedback dict
+        score = int(ai_feedback['score']) if ai_feedback['score'].isdigit() else 3
+
+        # Save the daily answer
+        save_daily_answer(student["id"], challenge_date, "[voice message]", str(ai_feedback), score)
+
+        # Update streak
+        streak_info = get_student_streak(student["id"])
+        current_streak = streak_info["streak"] if streak_info and streak_info["streak"] else 0
+        last_daily_date = streak_info["last_daily_date"] if streak_info else None
+
+        today = date.today()
+        yesterday = (today - timedelta(days=1)).isoformat()
+
+        if last_daily_date == yesterday:
+            new_streak = current_streak + 1
+        elif last_daily_date == today.isoformat():
+            new_streak = current_streak
+        else:
+            new_streak = 1
+
+        update_student_streak(student["id"], new_streak, today.isoformat())
+
+        # Format and send feedback
+        feedback_text = format_feedback(ai_feedback)
+
+        # Add streak info
+        streak_text = f"\n\n\U0001f525 Streak: {new_streak} kun ketma-ket!\nKeep going! \U0001f4aa"
+        feedback_text += streak_text
+
+        # Check for milestone messages
+        milestone_msg = get_streak_milestone(new_streak)
+        if milestone_msg:
+            feedback_text += f"\n\n{milestone_msg}"
+
+        await update.message.reply_text(feedback_text, reply_markup=get_main_menu_keyboard())
+
+        # Clear the daily challenge from user data
+        context.user_data.pop("daily_challenge", None)
+
+    else:
+        # Handle regular question voice answer
+        # Get AI feedback
+        ai_feedback = await check_voice_answer(
+            current_question["english_question"],
+            current_question["uzbek_translation"],
+            file_path,
+            current_question["example_answer"],
+        )
+
+        # Get score from feedback dict
+        score = int(ai_feedback['score']) if ai_feedback['score'].isdigit() else 3
+
+        # Save to database
+        save_answer(student["id"], current_question["id"], "[voice message]", str(ai_feedback), score)
+
+        # Format and send feedback
+        feedback_text = format_feedback(ai_feedback)
+        await update.message.reply_text(feedback_text, reply_markup=get_main_menu_keyboard())
+
+        # Clear the current question
+        context.user_data.pop("current_question", None)
+
+    # Delete temp file
+    os.remove(file_path)
+
+
 async def handle_non_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle non-text messages (photo, video, audio, etc.)."""
+    """Handle non-text messages (photo, video, audio, document)."""
     await update.message.reply_text("Iltimos, javobingizni yozma shaklda yuboring ✍️")
 
 
@@ -790,8 +912,11 @@ def main():
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message)
     )
     application.add_handler(
+        MessageHandler(filters.VOICE, handle_voice_message)
+    )
+    application.add_handler(
         MessageHandler(
-            filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.Document.ALL,
+            filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.Document.ALL,
             handle_non_text_message,
         )
     )

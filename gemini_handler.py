@@ -1,3 +1,5 @@
+import base64
+
 import google.generativeai as genai
 from config import GEMINI_API_KEY
 
@@ -51,6 +53,71 @@ MASLAHAT: Ko'proq so'z ishlating"""
             'score': '0',
             'good': '',
             'mistake': f'Xato yuz berdi: {str(e)}',
+            'correct': '',
+            'tip': 'Qayta urinib ko\'ring'
+        }
+
+
+async def check_voice_answer(english_question, uzbek_translation, voice_file_path, example_answer):
+    try:
+        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+
+        with open(voice_file_path, 'rb') as f:
+            audio_data = f.read()
+
+        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+
+        prompt = f"""You are an English teacher for Uzbek students.
+The student was asked this question: "{english_question}"
+Listen to the student's voice answer and evaluate it.
+
+Respond ONLY in this exact format:
+BAHO: [number 1-5]
+YAXSHI: [what was good in Uzbek, max 1 sentence]
+XATO: [grammar or vocabulary mistake in Uzbek, or 'Xato yo'q']
+TOGRI: [corrected version in English]
+MASLAHAT: [one tip in Uzbek]"""
+
+        response = model.generate_content([
+            prompt,
+            {
+                "inline_data": {
+                    "mime_type": "audio/ogg",
+                    "data": audio_base64
+                }
+            }
+        ])
+
+        text = response.text.strip()
+        lines = text.split('\n')
+        result = {
+            'score': '3',
+            'good': '',
+            'mistake': '',
+            'correct': '',
+            'tip': ''
+        }
+
+        for line in lines:
+            line = line.strip()
+            if line.startswith('BAHO:'):
+                result['score'] = line.replace('BAHO:', '').strip()
+            elif line.startswith('YAXSHI:'):
+                result['good'] = line.replace('YAXSHI:', '').strip()
+            elif line.startswith('XATO:'):
+                result['mistake'] = line.replace('XATO:', '').strip()
+            elif line.startswith('TOGRI:'):
+                result['correct'] = line.replace('TOGRI:', '').strip()
+            elif line.startswith('MASLAHAT:'):
+                result['tip'] = line.replace('MASLAHAT:', '').strip()
+
+        return result
+
+    except Exception as e:
+        return {
+            'score': '0',
+            'good': '',
+            'mistake': f'Ovoz xatosi: {str(e)}',
             'correct': '',
             'tip': 'Qayta urinib ko\'ring'
         }
