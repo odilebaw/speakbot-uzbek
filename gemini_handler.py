@@ -81,26 +81,36 @@ async def check_voice_answer(english_question, uzbek_translation, voice_file_pat
         import base64
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
         
-        prompt = f"""You are a strict English teacher for Uzbek students aged 13-19 at A0-A2 level.
+        prompt = f"""You are a strict English teacher for Uzbek students aged 13-19.
 The student was asked: "{english_question}"
 
-Listen to the student's voice answer carefully.
+Listen to the student's voice and do the following:
 
-Your job:
-1. Write down EXACTLY what the student said, word by word
-2. Find EVERY grammar and vocabulary mistake
-3. Explain EACH mistake clearly in Uzbek like this example:
-   "'I go' emas 'I went' bo'lishi kerak - chunki o'tgan zamon (past tense) ishlatilishi kerak"
-   "'she drink' emas 'she drinks' bo'lishi kerak - chunki 3-shaxs birlikda fe'lga -s qo'shiladi"
+STEP 1: Write down EXACTLY what the student said word by word.
+STEP 2: Find EVERY single mistake. Check these carefully:
+- Wrong words (e.g. "favorite" instead of "hot" when describing weather)
+- Missing subject (e.g. missing "It" at the start)
+- Wrong verb form (e.g. "are" instead of "is")
+- Repeated words
+- Wrong sentence structure
+STEP 3: For EACH mistake write it like this:
+"[wrong word/phrase] → [correct word/phrase]: [reason in Uzbek]"
+
+Example of good XATO format:
+"1. 'weather is favorite' → 'It is hot' bo'lishi kerak: ob-havo ta'riflanmoqda, 'favorite' noto'g'ri so'z
+2. 'weather weather' → takrorlash xatosi: bir so'zni qayta-qayta ishlatmang
+3. 'are hot' → 'is hot' bo'lishi kerak: 'weather' birlik, shuning uchun 'is' ishlatiladi"
 
 Respond ONLY in this exact format:
 
-TRANSCRIPT: [write word by word exactly what student said]
-BAHO: [1-5: 5=no mistakes, 4=1 mistake, 3=2-3 mistakes, 2=4+ mistakes, 1=very poor]
-YAXSHI: [one positive thing about their answer in Uzbek]
-XATO: [explain EACH mistake separately with reason in Uzbek. If no mistakes: 'Xato yo'q']
-TOGRI: [write the fully corrected sentence in English]
-MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
+TRANSCRIPT: [exactly what student said]
+BAHO: [1-5, be very strict]
+YAXSHI: [only if something was genuinely good, otherwise: 'Javob berishga harakat qilindi']
+XATO: [list EVERY mistake with explanation as shown above. NEVER leave this empty if there are mistakes]
+TOGRI: [the correct complete answer]
+MASLAHAT: [one specific tip based on the biggest mistake]
+
+IMPORTANT: XATO field must NEVER be empty if student made mistakes. Always explain each mistake clearly."""
 
         response = model.generate_content([
             prompt,
