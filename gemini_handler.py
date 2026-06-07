@@ -2,32 +2,58 @@ import google.generativeai as genai
 from config import GEMINI_API_KEY
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash-lite")
-
-SYSTEM_PROMPT = """You are an English teacher for Uzbek students aged 13-19.
-Evaluate the student's English answer and respond ONLY in this exact format with no extra text:
-
-BAHO: [number 1-5]
-YAXSHI: [what was good in Uzbek, max 1 sentence]
-XATO: [grammar or vocabulary mistake in Uzbek, or 'Xato yo\'q']
-TOGRI: [corrected version in English]
-MASLAHAT: [one tip in Uzbek]"""
 
 
-def check_speaking_answer(english_question, uzbek_translation, student_answer, example_answer):
-    """Send the student's answer to Gemini API for evaluation."""
+async def check_speaking_answer(english_question, uzbek_translation, student_answer, example_answer):
     try:
-        prompt = f"""{SYSTEM_PROMPT}
+        model = genai.GenerativeModel("gemini-2.5-flash-lite")
+        
+        prompt = f"""You are an English teacher for Uzbek students.
+A student answered this question: "{english_question}"
+Student's answer: "{student_answer}"
 
-Question (English): {english_question}
-Question (Uzbek): {uzbek_translation}
-Student's answer: {student_answer}
-Example of a good answer: {example_answer}"""
+Respond ONLY in this exact format, nothing else:
+BAHO: 3
+YAXSHI: Javob tushunarli va to'g'ri tuzilgan
+XATO: Xato yo'q
+TOGRI: {example_answer}
+MASLAHAT: Ko'proq so'z ishlating"""
 
         response = model.generate_content(prompt)
-        return response.text
+        text = response.text.strip()
+        
+        lines = text.split('\n')
+        result = {
+            'score': '3',
+            'good': '',
+            'mistake': '',
+            'correct': '',
+            'tip': ''
+        }
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith('BAHO:'):
+                result['score'] = line.replace('BAHO:', '').strip()
+            elif line.startswith('YAXSHI:'):
+                result['good'] = line.replace('YAXSHI:', '').strip()
+            elif line.startswith('XATO:'):
+                result['mistake'] = line.replace('XATO:', '').strip()
+            elif line.startswith('TOGRI:'):
+                result['correct'] = line.replace('TOGRI:', '').strip()
+            elif line.startswith('MASLAHAT:'):
+                result['tip'] = line.replace('MASLAHAT:', '').strip()
+        
+        return result
+        
     except Exception as e:
-        return "Kechirasiz, hozir javobingizni tekshirib bo'lmayapti. Iltimos, keyinroq urinib ko'ring."
+        return {
+            'score': '0',
+            'good': '',
+            'mistake': f'Xato yuz berdi: {str(e)}',
+            'correct': '',
+            'tip': 'Qayta urinib ko\'ring'
+        }
 
 
 def get_daily_question(topic):

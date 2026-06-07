@@ -1,5 +1,4 @@
 import random
-import re
 from datetime import date, timedelta
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -574,21 +573,21 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.chat.send_action("typing")
 
     # Get AI feedback
-    ai_feedback = check_speaking_answer(
+    ai_feedback = await check_speaking_answer(
         current_question["english_question"],
         current_question["uzbek_translation"],
         student_answer,
         current_question["example_answer"],
     )
 
-    # Parse the score from feedback
-    score = parse_score(ai_feedback)
+    # Get score from feedback dict
+    score = int(ai_feedback['score']) if ai_feedback['score'].isdigit() else 3
 
     # Save to database
-    save_answer(student["id"], current_question["id"], student_answer, ai_feedback, score)
+    save_answer(student["id"], current_question["id"], student_answer, str(ai_feedback), score)
 
     # Format and send feedback
-    feedback_text = format_feedback(ai_feedback, score)
+    feedback_text = format_feedback(ai_feedback)
     await update.message.reply_text(feedback_text, reply_markup=get_main_menu_keyboard())
 
     # Clear the current question
@@ -621,18 +620,18 @@ async def handle_daily_challenge_answer(update: Update, context: ContextTypes.DE
     await update.message.chat.send_action("typing")
 
     # Get AI feedback
-    ai_feedback = check_speaking_answer(
+    ai_feedback = await check_speaking_answer(
         daily_challenge["english_question"],
         daily_challenge["uzbek_translation"],
         student_answer,
         daily_challenge["example_answer"],
     )
 
-    # Parse the score from feedback
-    score = parse_score(ai_feedback)
+    # Get score from feedback dict
+    score = int(ai_feedback['score']) if ai_feedback['score'].isdigit() else 3
 
     # Save the daily answer
-    save_daily_answer(student["id"], challenge_date, student_answer, ai_feedback, score)
+    save_daily_answer(student["id"], challenge_date, student_answer, str(ai_feedback), score)
 
     # Update streak
     streak_info = get_student_streak(student["id"])
@@ -652,7 +651,7 @@ async def handle_daily_challenge_answer(update: Update, context: ContextTypes.DE
     update_student_streak(student["id"], new_streak, today.isoformat())
 
     # Format and send feedback
-    feedback_text = format_feedback(ai_feedback, score)
+    feedback_text = format_feedback(ai_feedback)
 
     # Add streak info
     streak_text = f"\n\n\U0001f525 Streak: {new_streak} kun ketma-ket!\nKeep going! \U0001f4aa"
@@ -676,33 +675,13 @@ async def handle_non_text_message(update: Update, context: ContextTypes.DEFAULT_
 
 # --- Helper Functions ---
 
-def parse_score(feedback: str) -> int:
-    """Parse the score from AI feedback text."""
-    match = re.search(r"BAHO:\s*(\d)", feedback)
-    if match:
-        return int(match.group(1))
-    return 3  # Default score if parsing fails
-
-
-def format_feedback(ai_feedback: str, score: int) -> str:
-    """Format the AI feedback into a user-friendly message."""
-    # Parse individual components from feedback
-    good_part = ""
-    mistake = ""
-    correct_answer = ""
-    tip = ""
-
-    lines = ai_feedback.strip().split("\n")
-    for line in lines:
-        line = line.strip()
-        if line.startswith("YAXSHI:"):
-            good_part = line.replace("YAXSHI:", "").strip()
-        elif line.startswith("XATO:"):
-            mistake = line.replace("XATO:", "").strip()
-        elif line.startswith("TOGRI:"):
-            correct_answer = line.replace("TOGRI:", "").strip()
-        elif line.startswith("MASLAHAT:"):
-            tip = line.replace("MASLAHAT:", "").strip()
+def format_feedback(feedback: dict) -> str:
+    """Format the AI feedback dict into a user-friendly message."""
+    score = feedback.get('score', '3')
+    good_part = feedback.get('good', '')
+    mistake = feedback.get('mistake', '')
+    correct_answer = feedback.get('correct', '')
+    tip = feedback.get('tip', '')
 
     feedback_text = (
         f"✅ Bahongiz: {score}/5\n"
