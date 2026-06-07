@@ -81,39 +81,11 @@ async def check_voice_answer(english_question, uzbek_translation, voice_file_pat
         import base64
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
         
-        prompt = f"""You are a strict English teacher for Uzbek students aged 13-19.
-The student was asked: "{english_question}"
-
-Listen to the student's voice and do the following:
-
-STEP 1: Write down EXACTLY what the student said word by word.
-STEP 2: Find EVERY single mistake. Check these carefully:
-- Wrong words (e.g. "favorite" instead of "hot" when describing weather)
-- Missing subject (e.g. missing "It" at the start)
-- Wrong verb form (e.g. "are" instead of "is")
-- Repeated words
-- Wrong sentence structure
-STEP 3: For EACH mistake write it like this:
-"[wrong word/phrase] → [correct word/phrase]: [reason in Uzbek]"
-
-Example of good XATO format:
-"1. 'weather is favorite' → 'It is hot' bo'lishi kerak: ob-havo ta'riflanmoqda, 'favorite' noto'g'ri so'z
-2. 'weather weather' → takrorlash xatosi: bir so'zni qayta-qayta ishlatmang
-3. 'are hot' → 'is hot' bo'lishi kerak: 'weather' birlik, shuning uchun 'is' ishlatiladi"
-
-Respond ONLY in this exact format:
-
-TRANSCRIPT: [exactly what student said]
-BAHO: [1-5, be very strict]
-YAXSHI: [only if something was genuinely good, otherwise: 'Javob berishga harakat qilindi']
-XATO: [list EVERY mistake with explanation as shown above. NEVER leave this empty if there are mistakes]
-TOGRI: [the correct complete answer]
-MASLAHAT: [one specific tip based on the biggest mistake]
-
-IMPORTANT: XATO field must NEVER be empty if student made mistakes. Always explain each mistake clearly."""
-
-        response = model.generate_content([
-            prompt,
+        # CALL 1: Transcribe only
+        transcribe_prompt = "Listen to this audio and write down EXACTLY what the person said word by word. Return ONLY the transcribed text, nothing else."
+        
+        transcribe_response = model.generate_content([
+            transcribe_prompt,
             {
                 "inline_data": {
                     "mime_type": "audio/ogg",
@@ -122,10 +94,37 @@ IMPORTANT: XATO field must NEVER be empty if student made mistakes. Always expla
             }
         ])
         
-        text = response.text.strip()
-        lines = text.split('\n')
+        transcript = transcribe_response.text.strip()
+        
+        # CALL 2: Grammar analysis on the transcript text
+        analysis_prompt = f"""You are a strict English grammar teacher for Uzbek students (A0-A2 level).
+
+The student was asked: "{english_question}"
+The student said: "{transcript}"
+
+Analyze this sentence and find ALL grammar mistakes.
+
+For each mistake write exactly like this:
+"'[wrong]' → '[correct]' : [reason in Uzbek]"
+
+Examples:
+"'I favorite' → 'My favorite' : 'I' emas 'My' ishlatiladi - egalik olmoshi kerak"
+"'coffee are' → 'coffee is' : 'coffee' birlik son, shuning uchun 'is' ishlatiladi"
+"'she go' → 'she goes' : 3-shaxs birlikda fe'lga -s qo'shiladi"
+
+Now respond ONLY in this exact format:
+
+BAHO: [1-5: 5=0 xato, 4=1 xato, 3=2-3 xato, 2=4+ xato, 1=juda ko'p xato]
+YAXSHI: [nima yaxshi edi - o'zbek tilida]
+XATO: [har bir xatoni alohida qatorda yozing yuqoridagi formatda. Agar xato yo'q: 'Xato yo'q']
+TOGRI: [to'liq to'g'ri javob ingliz tilida]
+MASLAHAT: [eng muhim bir maslahat o'zbek tilida]"""
+
+        analysis_response = model.generate_content(analysis_prompt)
+        analysis_text = analysis_response.text.strip()
+        
         result = {
-            'transcript': '',
+            'transcript': transcript,
             'score': '3',
             'good': '',
             'mistake': '',
@@ -133,15 +132,13 @@ IMPORTANT: XATO field must NEVER be empty if student made mistakes. Always expla
             'tip': ''
         }
         
-        for line in lines:
+        for line in analysis_text.split('\n'):
             line = line.strip()
             if ':' in line:
                 key, _, value = line.partition(':')
                 key = key.strip().upper()
                 value = value.strip()
-                if key == 'TRANSCRIPT':
-                    result['transcript'] = value
-                elif key == 'BAHO':
+                if key == 'BAHO':
                     result['score'] = value
                 elif key == 'YAXSHI':
                     result['good'] = value
