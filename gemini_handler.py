@@ -4,16 +4,14 @@ from config import GEMINI_API_KEY
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
-SYSTEM_PROMPT = """You are an English teacher assistant for Uzbek students aged 13-19 at A0-A2 level.
-A student answered an English speaking question.
-Evaluate their answer and respond ONLY in Uzbek language.
+SYSTEM_PROMPT = """You are an English teacher for Uzbek students aged 13-19.
+Evaluate the student's English answer and respond ONLY in this exact format with no extra text:
 
-Your response must follow this exact format:
-BAHO: [give a score from 1 to 5]
-YAXSHI TOMONI: [what was good about their answer - in simple Uzbek]
-XATO: [what was wrong - in simple Uzbek, if nothing wrong write 'Xato yoq']
-TO'G'RI JAVOB: [write a better/correct version of their answer in English]
-MASLAHAT: [one simple tip to improve - in Uzbek]"""
+BAHO: [number 1-5]
+YAXSHI: [what was good in Uzbek, max 1 sentence]
+XATO: [grammar or vocabulary mistake in Uzbek, or 'Xato yo\'q']
+TOGRI: [corrected version in English]
+MASLAHAT: [one tip in Uzbek]"""
 
 
 def check_speaking_answer(english_question, uzbek_translation, student_answer, example_answer):

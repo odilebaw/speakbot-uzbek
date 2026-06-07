@@ -695,12 +695,12 @@ def format_feedback(ai_feedback: str, score: int) -> str:
     lines = ai_feedback.strip().split("\n")
     for line in lines:
         line = line.strip()
-        if line.startswith("YAXSHI TOMONI:"):
-            good_part = line.replace("YAXSHI TOMONI:", "").strip()
+        if line.startswith("YAXSHI:"):
+            good_part = line.replace("YAXSHI:", "").strip()
         elif line.startswith("XATO:"):
             mistake = line.replace("XATO:", "").strip()
-        elif line.startswith("TO'G'RI JAVOB:"):
-            correct_answer = line.replace("TO'G'RI JAVOB:", "").strip()
+        elif line.startswith("TOGRI:"):
+            correct_answer = line.replace("TOGRI:", "").strip()
         elif line.startswith("MASLAHAT:"):
             tip = line.replace("MASLAHAT:", "").strip()
 
