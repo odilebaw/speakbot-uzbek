@@ -11,23 +11,22 @@ async def check_speaking_answer(english_question, uzbek_translation, student_ans
         model = genai.GenerativeModel("gemini-2.5-flash-lite")
         
         prompt = f"""You are a strict English teacher for Uzbek students aged 13-19 at A0-A2 level.
-
 The student was asked: "{english_question}"
 Student's answer: "{student_answer}"
 
-Analyze the student's answer carefully. Then:
+Your job:
+1. Find EVERY grammar and vocabulary mistake
+2. Explain EACH mistake clearly in Uzbek like this example:
+   "'I go' emas 'I went' bo'lishi kerak - chunki o'tgan zamon (past tense) ishlatilishi kerak"
+   "'she drink' emas 'she drinks' bo'lishi kerak - chunki 3-shaxs birlikda fe'lga -s qo'shiladi"
 
-1. Find ALL grammar mistakes (subject-verb agreement, tense, articles, prepositions, word order)
-2. Find ALL vocabulary mistakes (wrong words, incorrect spelling)
-3. Be STRICT - even small mistakes must be reported
+Respond ONLY in this exact format:
 
-Respond ONLY in this exact format, nothing else:
-
-BAHO: [1-5, be strict: 5=perfect, 4=1 small mistake, 3=2-3 mistakes, 2=many mistakes, 1=very poor]
-YAXSHI: [what was good about their answer in Uzbek]
-XATO: [list ALL grammar and vocabulary mistakes in Uzbek, for example: "'she go' emas 'she goes' bolishi kerak (3rd person singular)", if truly no mistakes write 'Xato yoq']
-TOGRI: [write the fully corrected version of exactly what they wrote]
-MASLAHAT: [one specific improvement tip in Uzbek based on their mistakes]"""
+BAHO: [1-5: 5=no mistakes, 4=1 mistake, 3=2-3 mistakes, 2=4+ mistakes, 1=very poor]
+YAXSHI: [one positive thing about their answer in Uzbek]
+XATO: [explain EACH mistake separately with reason in Uzbek. If no mistakes: 'Xato yo'q']
+TOGRI: [write the fully corrected sentence in English]
+MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
 
         response = model.generate_content(prompt)
         text = response.text.strip()
@@ -43,16 +42,22 @@ MASLAHAT: [one specific improvement tip in Uzbek based on their mistakes]"""
         
         for line in lines:
             line = line.strip()
-            if line.startswith('BAHO:'):
-                result['score'] = line.replace('BAHO:', '').strip()
-            elif line.startswith('YAXSHI:'):
-                result['good'] = line.replace('YAXSHI:', '').strip()
-            elif line.startswith('XATO:'):
-                result['mistake'] = line.replace('XATO:', '').strip()
-            elif line.startswith('TOGRI:'):
-                result['correct'] = line.replace('TOGRI:', '').strip()
-            elif line.startswith('MASLAHAT:'):
-                result['tip'] = line.replace('MASLAHAT:', '').strip()
+            if ':' in line:
+                key, _, value = line.partition(':')
+                key = key.strip().upper()
+                value = value.strip()
+                if key == 'TRANSCRIPT':
+                    result['transcript'] = value
+                elif key == 'BAHO':
+                    result['score'] = value
+                elif key == 'YAXSHI':
+                    result['good'] = value
+                elif key == 'XATO':
+                    result['mistake'] = value
+                elif key == 'TOGRI':
+                    result['correct'] = value
+                elif key == 'MASLAHAT':
+                    result['tip'] = value
         
         return result
         
@@ -77,24 +82,25 @@ async def check_voice_answer(english_question, uzbek_translation, voice_file_pat
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
         
         prompt = f"""You are a strict English teacher for Uzbek students aged 13-19 at A0-A2 level.
-
 The student was asked: "{english_question}"
 
-Listen carefully to the student's voice answer. Then:
+Listen to the student's voice answer carefully.
 
-1. Write down EXACTLY what the student said word by word
-2. Find ALL grammar mistakes (subject-verb agreement, tense, articles, prepositions, word order)
-3. Find ALL vocabulary mistakes (wrong words, incorrect spelling in speech)
-4. Be STRICT - even small mistakes must be reported
+Your job:
+1. Write down EXACTLY what the student said, word by word
+2. Find EVERY grammar and vocabulary mistake
+3. Explain EACH mistake clearly in Uzbek like this example:
+   "'I go' emas 'I went' bo'lishi kerak - chunki o'tgan zamon (past tense) ishlatilishi kerak"
+   "'she drink' emas 'she drinks' bo'lishi kerak - chunki 3-shaxs birlikda fe'lga -s qo'shiladi"
 
-Respond ONLY in this exact format, nothing else:
+Respond ONLY in this exact format:
 
-TRANSCRIPT: [write exactly what the student said word by word]
-BAHO: [1-5, be strict: 5=perfect, 4=1 small mistake, 3=2-3 mistakes, 2=many mistakes, 1=very poor]
-YAXSHI: [what was good about their answer in Uzbek]
-XATO: [list ALL grammar and vocabulary mistakes in Uzbek, for example: "'she go' emas 'she goes' bolishi kerak (3rd person singular)", if truly no mistakes write 'Xato yoq']
-TOGRI: [write the fully corrected version of exactly what they said]
-MASLAHAT: [one specific improvement tip in Uzbek based on their mistakes]"""
+TRANSCRIPT: [write word by word exactly what student said]
+BAHO: [1-5: 5=no mistakes, 4=1 mistake, 3=2-3 mistakes, 2=4+ mistakes, 1=very poor]
+YAXSHI: [one positive thing about their answer in Uzbek]
+XATO: [explain EACH mistake separately with reason in Uzbek. If no mistakes: 'Xato yo'q']
+TOGRI: [write the fully corrected sentence in English]
+MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
 
         response = model.generate_content([
             prompt,
@@ -119,18 +125,22 @@ MASLAHAT: [one specific improvement tip in Uzbek based on their mistakes]"""
         
         for line in lines:
             line = line.strip()
-            if line.startswith('TRANSCRIPT:'):
-                result['transcript'] = line.replace('TRANSCRIPT:', '').strip()
-            elif line.startswith('BAHO:'):
-                result['score'] = line.replace('BAHO:', '').strip()
-            elif line.startswith('YAXSHI:'):
-                result['good'] = line.replace('YAXSHI:', '').strip()
-            elif line.startswith('XATO:'):
-                result['mistake'] = line.replace('XATO:', '').strip()
-            elif line.startswith('TOGRI:'):
-                result['correct'] = line.replace('TOGRI:', '').strip()
-            elif line.startswith('MASLAHAT:'):
-                result['tip'] = line.replace('MASLAHAT:', '').strip()
+            if ':' in line:
+                key, _, value = line.partition(':')
+                key = key.strip().upper()
+                value = value.strip()
+                if key == 'TRANSCRIPT':
+                    result['transcript'] = value
+                elif key == 'BAHO':
+                    result['score'] = value
+                elif key == 'YAXSHI':
+                    result['good'] = value
+                elif key == 'XATO':
+                    result['mistake'] = value
+                elif key == 'TOGRI':
+                    result['correct'] = value
+                elif key == 'MASLAHAT':
+                    result['tip'] = value
         
         return result
         
