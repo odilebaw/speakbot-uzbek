@@ -799,18 +799,23 @@ async def handle_non_text_message(update: Update, context: ContextTypes.DEFAULT_
 
 def format_feedback(feedback: dict) -> str:
     """Format the AI feedback dict into a user-friendly message."""
+    transcript = feedback.get('transcript', '')
     score = feedback.get('score', '3')
     good_part = feedback.get('good', '')
     mistake = feedback.get('mistake', '')
     correct_answer = feedback.get('correct', '')
     tip = feedback.get('tip', '')
 
-    feedback_text = (
-        f"✅ Bahongiz: {score}/5\n"
-        f"👍 Yaxshi tomoni: {good_part}\n"
-        f"❌ Xato: {mistake}\n"
-        f"💡 To'g'ri javob: {correct_answer}\n"
-        f"📌 Maslahat: {tip}"
+    feedback_text = ""
+    if transcript:
+        feedback_text += f"\U0001f3a4 Siz aytdingiz: {transcript}\n\n"
+
+    feedback_text += (
+        f"\u2705 Bahongiz: {score}/5\n"
+        f"\U0001f44d Yaxshi tomoni: {good_part}\n"
+        f"\u274c Xato: {mistake}\n"
+        f"\U0001f4a1 To'g'ri javob: {correct_answer}\n"
+        f"\U0001f4cc Maslahat: {tip}"
     )
 
     return feedback_text
