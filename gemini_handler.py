@@ -13,10 +13,11 @@ def get_model():
 
 
 async def check_speaking_answer(english_question, uzbek_translation, student_answer, example_answer):
-    try:
-        model = get_model()
-        
-        prompt = f"""You are a strict English teacher for Uzbek students aged 13-19 at A0-A2 level.
+    from config import GEMINI_API_KEYS, GEMINI_API_KEY
+    
+    all_keys = GEMINI_API_KEYS if GEMINI_API_KEYS else [GEMINI_API_KEY]
+    
+    prompt = f"""You are a strict English teacher for Uzbek students aged 13-19 at A0-A2 level.
 The student was asked: "{english_question}"
 Student's answer: "{student_answer}"
 
@@ -34,59 +35,68 @@ XATO: [explain EACH mistake separately with reason in Uzbek. If no mistakes: 'Xa
 TOGRI: [write the fully corrected sentence in English]
 MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
 
-        response = model.generate_content(prompt)
-        text = response.text.strip()
-        
-        lines = text.split('\n')
-        result = {
-            'score': '3',
-            'good': '',
-            'mistake': '',
-            'correct': '',
-            'tip': ''
-        }
-        
-        for line in lines:
-            line = line.strip()
-            if ':' in line:
-                key, _, value = line.partition(':')
-                key = key.strip().upper()
-                value = value.strip()
-                if key == 'TRANSCRIPT':
-                    result['transcript'] = value
-                elif key == 'BAHO':
-                    result['score'] = value
-                elif key == 'YAXSHI':
-                    result['good'] = value
-                elif key == 'XATO':
-                    result['mistake'] = value
-                elif key == 'TOGRI':
-                    result['correct'] = value
-                elif key == 'MASLAHAT':
-                    result['tip'] = value
-        
-        return result
-        
-    except Exception as e:
-        return {
-            'score': '0',
-            'good': '',
-            'mistake': f'Xato yuz berdi: {str(e)}',
-            'correct': '',
-            'tip': 'Qayta urinib ko\'ring'
-        }
+    last_error = None
+    for key in all_keys:
+        try:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel("gemini-2.5-flash-lite")
+            
+            response = model.generate_content(prompt)
+            text = response.text.strip()
+            
+            lines = text.split('\n')
+            result = {
+                'score': '3',
+                'good': '',
+                'mistake': '',
+                'correct': '',
+                'tip': ''
+            }
+            
+            for line in lines:
+                line = line.strip()
+                if ':' in line:
+                    k, _, value = line.partition(':')
+                    k = k.strip().upper()
+                    value = value.strip()
+                    if k == 'TRANSCRIPT':
+                        result['transcript'] = value
+                    elif k == 'BAHO':
+                        result['score'] = value
+                    elif k == 'YAXSHI':
+                        result['good'] = value
+                    elif k == 'XATO':
+                        result['mistake'] = value
+                    elif k == 'TOGRI':
+                        result['correct'] = value
+                    elif k == 'MASLAHAT':
+                        result['tip'] = value
+            
+            return result
+            
+        except Exception as e:
+            last_error = str(e)
+            continue
+    
+    return {
+        'score': '0',
+        'good': '',
+        'mistake': f'Barcha keylar ishlamadi: {last_error}',
+        'correct': '',
+        'tip': 'Iltimos keyinroq urinib koring'
+    }
 
 
 async def check_voice_answer(english_question, uzbek_translation, voice_file_path, example_answer):
-    try:
-        model = get_model()
-        
-        with open(voice_file_path, 'rb') as f:
-            audio_data = f.read()
-        
-        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-        
-        prompt = f"""You are a strict English grammar teacher for Uzbek students (A0-A2 level).
+    from config import GEMINI_API_KEYS, GEMINI_API_KEY
+    
+    all_keys = GEMINI_API_KEYS if GEMINI_API_KEYS else [GEMINI_API_KEY]
+    
+    with open(voice_file_path, 'rb') as f:
+        audio_data = f.read()
+    audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+    
+    prompt = f"""You are a strict English grammar teacher for Uzbek students (A0-A2 level).
 The student was asked: "{english_question}"
 
 Do these tasks in order:
@@ -105,91 +115,88 @@ Respond ONLY in this format:
 TRANSCRIPT: [word for word what student said]
 BAHO: [1-5, very strict: 5=perfect, 4=1 mistake, 3=2 mistakes, 2=3-4 mistakes, 1=5+ mistakes]
 YAXSHI: [one positive thing in Uzbek]
-XATO: [each mistake on new line: '...' \u2192 '...' : reason. If zero mistakes: 'Xato yo\u2018q']
+XATO: [each mistake on new line. If zero mistakes: 'Xato yoq']
 TOGRI: [corrected full sentence]
 MASLAHAT: [one tip in Uzbek]
 
-RULE: If student made ANY mistake, XATO must NOT be empty. List every mistake."""
+RULE: If student made ANY mistake, XATO must NOT be empty."""
 
-        response = model.generate_content([
-            prompt,
-            {
-                "inline_data": {
-                    "mime_type": "audio/ogg",
-                    "data": audio_base64
+    last_error = None
+    for key in all_keys:
+        try:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel("gemini-2.5-flash-lite")
+            
+            response = model.generate_content([
+                prompt,
+                {
+                    "inline_data": {
+                        "mime_type": "audio/ogg",
+                        "data": audio_base64
+                    }
                 }
+            ])
+            
+            text = response.text.strip()
+            result = {
+                'transcript': '',
+                'score': '3',
+                'good': '',
+                'mistake': '',
+                'correct': '',
+                'tip': ''
             }
-        ])
-        
-        text = response.text.strip()
-        result = {
-            'transcript': '',
-            'score': '3',
-            'good': '',
-            'mistake': '',
-            'correct': '',
-            'tip': ''
-        }
-        
-        current_key = None
-        current_value_lines = []
-        
-        for line in text.split('\n'):
-            line = line.strip()
-            if not line:
-                continue
-            if ':' in line:
-                first_word = line.split(':')[0].strip().upper()
-                if first_word in ['TRANSCRIPT', 'BAHO', 'YAXSHI', 'XATO', 'TOGRI', 'MASLAHAT']:
-                    if current_key and current_value_lines:
-                        value = ' '.join(current_value_lines).strip()
-                        if current_key == 'TRANSCRIPT':
-                            result['transcript'] = value
-                        elif current_key == 'BAHO':
-                            result['score'] = value
-                        elif current_key == 'YAXSHI':
-                            result['good'] = value
-                        elif current_key == 'XATO':
-                            result['mistake'] = value
-                        elif current_key == 'TOGRI':
-                            result['correct'] = value
-                        elif current_key == 'MASLAHAT':
-                            result['tip'] = value
-                    current_key = first_word
-                    current_value_lines = [line.partition(':')[2].strip()]
+            
+            current_key = None
+            current_value_lines = []
+            
+            for line in text.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                if ':' in line:
+                    first_word = line.split(':')[0].strip().upper()
+                    if first_word in ['TRANSCRIPT', 'BAHO', 'YAXSHI', 'XATO', 'TOGRI', 'MASLAHAT']:
+                        if current_key and current_value_lines:
+                            value = ' '.join(current_value_lines).strip()
+                            if current_key == 'TRANSCRIPT': result['transcript'] = value
+                            elif current_key == 'BAHO': result['score'] = value
+                            elif current_key == 'YAXSHI': result['good'] = value
+                            elif current_key == 'XATO': result['mistake'] = value
+                            elif current_key == 'TOGRI': result['correct'] = value
+                            elif current_key == 'MASLAHAT': result['tip'] = value
+                        current_key = first_word
+                        current_value_lines = [line.partition(':')[2].strip()]
+                    else:
+                        if current_key:
+                            current_value_lines.append(line)
                 else:
                     if current_key:
                         current_value_lines.append(line)
-            else:
-                if current_key:
-                    current_value_lines.append(line)
-        
-        if current_key and current_value_lines:
-            value = ' '.join(current_value_lines).strip()
-            if current_key == 'TRANSCRIPT':
-                result['transcript'] = value
-            elif current_key == 'BAHO':
-                result['score'] = value
-            elif current_key == 'YAXSHI':
-                result['good'] = value
-            elif current_key == 'XATO':
-                result['mistake'] = value
-            elif current_key == 'TOGRI':
-                result['correct'] = value
-            elif current_key == 'MASLAHAT':
-                result['tip'] = value
-        
-        return result
-        
-    except Exception as e:
-        return {
-            'transcript': '',
-            'score': '0',
-            'good': '',
-            'mistake': f'Xato: {str(e)}',
-            'correct': '',
-            'tip': 'Qayta urinib koring'
-        }
+            
+            if current_key and current_value_lines:
+                value = ' '.join(current_value_lines).strip()
+                if current_key == 'TRANSCRIPT': result['transcript'] = value
+                elif current_key == 'BAHO': result['score'] = value
+                elif current_key == 'YAXSHI': result['good'] = value
+                elif current_key == 'XATO': result['mistake'] = value
+                elif current_key == 'TOGRI': result['correct'] = value
+                elif current_key == 'MASLAHAT': result['tip'] = value
+            
+            return result
+            
+        except Exception as e:
+            last_error = str(e)
+            continue
+    
+    return {
+        'transcript': '',
+        'score': '0',
+        'good': '',
+        'mistake': f'Barcha keylar ishlamadi: {last_error}',
+        'correct': '',
+        'tip': 'Iltimos keyinroq urinib koring'
+    }
 
 
 def get_daily_question(topic):
