@@ -65,6 +65,16 @@ def create_tables():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS student_questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER NOT NULL,
+            question_id INTEGER NOT NULL,
+            answered_at TEXT NOT NULL,
+            FOREIGN KEY (student_id) REFERENCES students (id)
+        )
+    """)
+
     # Add streak and last_daily_date columns to students table if not present
     try:
         cursor.execute("ALTER TABLE students ADD COLUMN streak INTEGER DEFAULT 0")
@@ -346,3 +356,42 @@ def get_student_streak(student_id):
 
     conn.close()
     return result
+
+
+# --- Student Questions Tracking ---
+
+def get_answered_question_ids(student_id):
+    """Returns list of question IDs student already answered."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT question_id FROM student_questions WHERE student_id = ?", (student_id,))
+    results = cursor.fetchall()
+
+    conn.close()
+    return [row["question_id"] for row in results]
+
+
+def mark_question_answered(student_id, question_id):
+    """Marks question as answered by the student."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        INSERT INTO student_questions (student_id, question_id, answered_at)
+        VALUES (?, ?, ?)
+    """, (student_id, question_id, datetime.now().isoformat()))
+
+    conn.commit()
+    conn.close()
+
+
+def reset_student_questions(student_id):
+    """Resets when all 150 questions are done."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM student_questions WHERE student_id = ?", (student_id,))
+
+    conn.commit()
+    conn.close()

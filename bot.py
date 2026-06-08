@@ -20,6 +20,7 @@ from database import (
     get_all_student_telegram_ids, get_student_average_score,
     get_daily_challenge, save_daily_challenge, get_student_daily_answer,
     save_daily_answer, update_student_streak, get_student_streak,
+    get_answered_question_ids, mark_question_answered, reset_student_questions,
 )
 from gemini_handler import check_speaking_answer, check_voice_answer, get_daily_question
 from questions import QUESTIONS
@@ -46,6 +47,16 @@ def get_topic_keyboard():
         [InlineKeyboardButton("🎨 Hobbies", callback_data="topic_hobbies")],
         [InlineKeyboardButton("🍽 Food", callback_data="topic_food")],
         [InlineKeyboardButton("🌅 Daily Life", callback_data="topic_daily life")],
+        [InlineKeyboardButton("🏠 Home", callback_data="topic_home")],
+        [InlineKeyboardButton("👫 Friends", callback_data="topic_friends")],
+        [InlineKeyboardButton("🌤 Weather", callback_data="topic_weather")],
+        [InlineKeyboardButton("🐾 Animals", callback_data="topic_animals")],
+        [InlineKeyboardButton("⚽ Sports", callback_data="topic_sports")],
+        [InlineKeyboardButton("👕 Clothes", callback_data="topic_clothes")],
+        [InlineKeyboardButton("🚌 Transport", callback_data="topic_transport")],
+        [InlineKeyboardButton("💪 Body", callback_data="topic_body")],
+        [InlineKeyboardButton("😊 Feelings", callback_data="topic_feelings")],
+        [InlineKeyboardButton("🕐 Time", callback_data="topic_time")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -360,7 +371,36 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_random_question(query, context: ContextTypes.DEFAULT_TYPE):
     """Send a random question to the student."""
-    question = random.choice(QUESTIONS)
+    telegram_id = query.from_user.id
+    student = get_student(telegram_id)
+
+    if not student:
+        add_student(telegram_id, query.from_user.full_name, query.from_user.username or "")
+        student = get_student(telegram_id)
+
+    # Get answered question IDs and filter
+    answered_ids = get_answered_question_ids(student["id"])
+    remaining_questions = [q for q in QUESTIONS if q["id"] not in answered_ids]
+
+    # If all questions answered, reset
+    if not remaining_questions:
+        reset_student_questions(student["id"])
+        remaining_questions = QUESTIONS
+        await query.edit_message_text(
+            "🎉 Tabriklaymiz! Siz barcha 150 ta savolni tugatdingiz! Endi boshidan boshlaymiz! 💪"
+        )
+        await query.message.reply_text("📝 Yangi savol:", reply_markup=get_main_menu_keyboard())
+        question = random.choice(remaining_questions)
+        context.user_data["current_question"] = question
+        question_text = (
+            f"📌 Savol: {question['english_question']}\n"
+            f"🇺🇿 Tarjima: {question['uzbek_translation']}\n"
+            f"✍️ Javob yozing yoki 🎤 ovozli xabar yuboring:"
+        )
+        await query.message.reply_text(question_text)
+        return
+
+    question = random.choice(remaining_questions)
 
     # Store the current question in user data for later evaluation
     context.user_data["current_question"] = question
@@ -376,12 +416,43 @@ async def send_random_question(query, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_topic_question(query, context: ContextTypes.DEFAULT_TYPE, topic: str):
     """Send a question from the selected topic."""
-    topic_questions = [q for q in QUESTIONS if q["topic"] == topic]
+    telegram_id = query.from_user.id
+    student = get_student(telegram_id)
 
-    if topic_questions:
-        question = random.choice(topic_questions)
-    else:
-        question = random.choice(QUESTIONS)
+    if not student:
+        add_student(telegram_id, query.from_user.full_name, query.from_user.username or "")
+        student = get_student(telegram_id)
+
+    # Get answered question IDs and filter
+    answered_ids = get_answered_question_ids(student["id"])
+    topic_questions = [q for q in QUESTIONS if q["topic"] == topic and q["id"] not in answered_ids]
+
+    # If no remaining topic questions, try all remaining
+    if not topic_questions:
+        remaining_questions = [q for q in QUESTIONS if q["id"] not in answered_ids]
+        if not remaining_questions:
+            reset_student_questions(student["id"])
+            remaining_questions = QUESTIONS
+            await query.edit_message_text(
+                "🎉 Tabriklaymiz! Siz barcha 150 ta savolni tugatdingiz! Endi boshidan boshlaymiz! 💪"
+            )
+            await query.message.reply_text("📝 Yangi savol:", reply_markup=get_main_menu_keyboard())
+            topic_questions = [q for q in QUESTIONS if q["topic"] == topic]
+            if not topic_questions:
+                topic_questions = QUESTIONS
+            question = random.choice(topic_questions)
+            context.user_data["current_question"] = question
+            question_text = (
+                f"📌 Savol: {question['english_question']}\n"
+                f"🇺🇿 Tarjima: {question['uzbek_translation']}\n"
+                f"✍️ Javob yozing yoki 🎤 ovozli xabar yuboring:"
+            )
+            await query.message.reply_text(question_text)
+            return
+        # Pick from remaining questions (different topic)
+        topic_questions = remaining_questions
+
+    question = random.choice(topic_questions)
 
     # Store the current question in user data for later evaluation
     context.user_data["current_question"] = question
@@ -587,6 +658,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Save to database
     save_answer(student["id"], current_question["id"], student_answer, str(ai_feedback), score)
 
+    # Mark question as answered for no-repeat tracking
+    mark_question_answered(student["id"], current_question["id"])
+
     # Format and send feedback
     feedback_text = format_feedback(ai_feedback)
     await update.message.reply_text(feedback_text, reply_markup=get_main_menu_keyboard())
@@ -778,6 +852,9 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # Save to database
         save_answer(student["id"], current_question["id"], "[voice message]", str(ai_feedback), score)
+
+        # Mark question as answered for no-repeat tracking
+        mark_question_answered(student["id"], current_question["id"])
 
         # Format and send feedback
         feedback_text = format_feedback(ai_feedback)
