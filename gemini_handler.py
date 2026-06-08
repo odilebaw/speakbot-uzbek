@@ -1,22 +1,20 @@
-import google.generativeai as genai
-import base64
+from groq import Groq
 import random
-from config import GEMINI_API_KEYS, GEMINI_API_KEY
+from config import GROQ_API_KEYS, GROQ_API_KEY
 
 
-def get_model():
-    """Get Gemini model with a random API key for load balancing"""
-    keys = GEMINI_API_KEYS if GEMINI_API_KEYS else [GEMINI_API_KEY]
+def get_client():
+    """Get Groq client with a random API key for load balancing"""
+    keys = GROQ_API_KEYS if GROQ_API_KEYS else [GROQ_API_KEY]
     key = random.choice(keys)
-    genai.configure(api_key=key)
-    return genai.GenerativeModel("gemini-2.0-flash-lite")
+    return Groq(api_key=key)
 
 
 async def check_speaking_answer(english_question, uzbek_translation, student_answer, example_answer):
-    from config import GEMINI_API_KEYS, GEMINI_API_KEY
-    
-    all_keys = GEMINI_API_KEYS if GEMINI_API_KEYS else [GEMINI_API_KEY]
-    
+    from config import GROQ_API_KEYS, GROQ_API_KEY
+
+    all_keys = GROQ_API_KEYS if GROQ_API_KEYS else [GROQ_API_KEY]
+
     prompt = f"""You are a strict English teacher for Uzbek students aged 13-19 at A0-A2 level.
 The student was asked: "{english_question}"
 Student's answer: "{student_answer}"
@@ -38,12 +36,18 @@ MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
     last_error = None
     for key in all_keys:
         try:
-            genai.configure(api_key=key)
-            model = genai.GenerativeModel("gemini-2.0-flash-lite")
-            
-            response = model.generate_content(prompt)
-            text = response.text.strip()
-            
+            client = Groq(api_key=key)
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": "You are a strict English grammar teacher for Uzbek students."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=1024
+            )
+            text = response.choices[0].message.content.strip()
+
             lines = text.split('\n')
             result = {
                 'score': '3',
@@ -52,7 +56,7 @@ MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
                 'correct': '',
                 'tip': ''
             }
-            
+
             for line in lines:
                 line = line.strip()
                 if ':' in line:
@@ -71,13 +75,13 @@ MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
                         result['correct'] = value
                     elif k == 'MASLAHAT':
                         result['tip'] = value
-            
+
             return result
-            
+
         except Exception as e:
             last_error = str(e)
             continue
-    
+
     return {
         'score': '0',
         'good': '',
@@ -88,27 +92,23 @@ MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
 
 
 async def check_voice_answer(english_question, uzbek_translation, voice_file_path, example_answer):
-    from config import GEMINI_API_KEYS, GEMINI_API_KEY
-    
-    all_keys = GEMINI_API_KEYS if GEMINI_API_KEYS else [GEMINI_API_KEY]
-    
-    with open(voice_file_path, 'rb') as f:
-        audio_data = f.read()
-    audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-    
+    from config import GROQ_API_KEYS, GROQ_API_KEY
+
+    all_keys = GROQ_API_KEYS if GROQ_API_KEYS else [GROQ_API_KEY]
+
     prompt = f"""You are a strict English grammar teacher for Uzbek students (A0-A2 level).
 The student was asked: "{english_question}"
+The student said: "{{transcript}}"
 
 Do these tasks in order:
-TASK 1: Write EXACTLY what the student said word by word.
-TASK 2: Check EVERY word for grammar mistakes. Look for:
+TASK 1: Check EVERY word for grammar mistakes. Look for:
 - Wrong pronoun (I instead of My, He instead of His)
 - Wrong verb form (go instead of goes, are instead of is)
 - Missing words (missing 'is', 'a', 'the')
 - Wrong word choice
 - Repeated words
-TASK 3: For EACH mistake found, write it like this:
-'[wrong]' \u2192 '[correct]' : [why in Uzbek]
+TASK 2: For EACH mistake found, write it like this:
+'[wrong]' -> '[correct]' : [why in Uzbek]
 
 Respond ONLY in this format:
 
@@ -124,32 +124,42 @@ RULE: If student made ANY mistake, XATO must NOT be empty."""
     last_error = None
     for key in all_keys:
         try:
-            genai.configure(api_key=key)
-            model = genai.GenerativeModel("gemini-2.0-flash-lite")
-            
-            response = model.generate_content([
-                prompt,
-                {
-                    "inline_data": {
-                        "mime_type": "audio/ogg",
-                        "data": audio_base64
-                    }
-                }
-            ])
-            
-            text = response.text.strip()
+            client = Groq(api_key=key)
+
+            # Step 1: Transcribe audio with Whisper
+            with open(voice_file_path, 'rb') as f:
+                transcription = client.audio.transcriptions.create(
+                    file=("audio.ogg", f),
+                    model="whisper-large-v3",
+                )
+            transcript = transcription.text
+
+            # Step 2: Analyze transcript with llama
+            analysis_prompt = prompt.replace("{transcript}", transcript)
+
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": "You are a strict English grammar teacher for Uzbek students."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                temperature=0.7,
+                max_tokens=1024
+            )
+            text = response.choices[0].message.content.strip()
+
             result = {
-                'transcript': '',
+                'transcript': transcript,
                 'score': '3',
                 'good': '',
                 'mistake': '',
                 'correct': '',
                 'tip': ''
             }
-            
+
             current_key = None
             current_value_lines = []
-            
+
             for line in text.split('\n'):
                 line = line.strip()
                 if not line:
@@ -173,7 +183,7 @@ RULE: If student made ANY mistake, XATO must NOT be empty."""
                 else:
                     if current_key:
                         current_value_lines.append(line)
-            
+
             if current_key and current_value_lines:
                 value = ' '.join(current_value_lines).strip()
                 if current_key == 'TRANSCRIPT': result['transcript'] = value
@@ -182,13 +192,13 @@ RULE: If student made ANY mistake, XATO must NOT be empty."""
                 elif current_key == 'XATO': result['mistake'] = value
                 elif current_key == 'TOGRI': result['correct'] = value
                 elif current_key == 'MASLAHAT': result['tip'] = value
-            
+
             return result
-            
+
         except Exception as e:
             last_error = str(e)
             continue
-    
+
     return {
         'transcript': '',
         'score': '0',
@@ -200,10 +210,10 @@ RULE: If student made ANY mistake, XATO must NOT be empty."""
 
 
 def get_daily_question(topic):
-    """Ask Gemini to generate 1 new speaking question on the given topic."""
+    """Ask Groq to generate 1 new speaking question on the given topic."""
     try:
-        model = get_model()
-        
+        client = get_client()
+
         prompt = f"""Generate 1 simple English speaking question for Uzbek students aged 13-19 at A0-A2 level.
 Topic: {topic}
 
@@ -212,8 +222,16 @@ QUESTION: [question in English]
 UZBEK: [translation of the question in Uzbek]
 EXAMPLE: [a simple example answer in English, 1-2 sentences]"""
 
-        response = model.generate_content(prompt)
-        text = response.text
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": "You are an English teacher creating simple questions for Uzbek students."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=256
+        )
+        text = response.choices[0].message.content
 
         lines = text.strip().split("\n")
         english_question = ""
