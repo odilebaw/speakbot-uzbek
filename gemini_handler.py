@@ -9,7 +9,7 @@ def get_model():
     keys = GEMINI_API_KEYS if GEMINI_API_KEYS else [GEMINI_API_KEY]
     key = random.choice(keys)
     genai.configure(api_key=key)
-    return genai.GenerativeModel("gemini-2.5-flash-lite")
+    return genai.GenerativeModel("gemini-2.0-flash")
 
 
 async def check_speaking_answer(english_question, uzbek_translation, student_answer, example_answer):
@@ -39,7 +39,7 @@ MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
     for key in all_keys:
         try:
             genai.configure(api_key=key)
-            model = genai.GenerativeModel("gemini-2.5-flash-lite")
+            model = genai.GenerativeModel("gemini-2.0-flash")
             
             response = model.generate_content(prompt)
             text = response.text.strip()
@@ -125,7 +125,7 @@ RULE: If student made ANY mistake, XATO must NOT be empty."""
     for key in all_keys:
         try:
             genai.configure(api_key=key)
-            model = genai.GenerativeModel("gemini-2.5-flash-lite")
+            model = genai.GenerativeModel("gemini-2.0-flash")
             
             response = model.generate_content([
                 prompt,
