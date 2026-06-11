@@ -41,7 +41,7 @@ MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
                 'tip': ''
             }
 
-            for line in text.split(' '):
+            for line in text.(' '):
                 line = line.strip()
                 if ':' in line:
                     k, _, value = line.partition(':')
@@ -134,12 +134,12 @@ RULE: If student made ANY mistake, XATO must NOT be empty."""
             current_key = None
             current_value_lines = []
 
-            for line in text.split(' '):
+            for line in text.(' '):
                 line = line.strip()
                 if not line:
                     continue
                 if ':' in line:
-                    first_word = line.split(':')[0].strip().upper()
+                    first_word = line.(':')[0].strip().upper()
                     if first_word in ['TRANSCRIPT', 'BAHO', 'YAXSHI', 'XATO', 'TOGRI', 'MASLAHAT']:
                         if current_key and current_value_lines:
                             value = ' '.join(current_value_lines).strip()
@@ -202,7 +202,7 @@ EXAMPLE: [a simple example answer in English, 1-2 sentences]"""
             response = model.generate_content(prompt)
             text = response.text
 
-            lines = text.strip().split(" ")
+            lines = text.strip().(" ")
             english_question = ""
             uzbek_translation = ""
             example_answer = ""
