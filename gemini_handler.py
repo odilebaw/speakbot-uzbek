@@ -1,19 +1,10 @@
-from groq import Groq
+import google.generativeai as genai
+import base64
 import random
-from config import GROQ_API_KEYS, GROQ_API_KEY
-
-
-def get_client():
-    """Get Groq client with a random API key for load balancing"""
-    keys = GROQ_API_KEYS if GROQ_API_KEYS else [GROQ_API_KEY]
-    key = random.choice(keys)
-    return Groq(api_key=key)
-
+from config import GEMINI_API_KEYS, GEMINI_API_KEY
 
 async def check_speaking_answer(english_question, uzbek_translation, student_answer, example_answer):
-    from config import GROQ_API_KEYS, GROQ_API_KEY
-
-    all_keys = GROQ_API_KEYS if GROQ_API_KEYS else [GROQ_API_KEY]
+    all_keys = GEMINI_API_KEYS if GEMINI_API_KEYS else [GEMINI_API_KEY]
 
     prompt = f"""You are a strict English teacher for Uzbek students aged 13-19 at A0-A2 level.
 The student was asked: "{english_question}"
@@ -36,19 +27,12 @@ MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
     last_error = None
     for key in all_keys:
         try:
-            client = Groq(api_key=key)
-            response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": "You are a strict English grammar teacher for Uzbek students."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=1024
-            )
-            text = response.choices[0].message.content.strip()
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
-            lines = text.split('\n')
+            response = model.generate_content(prompt)
+            text = response.text.strip()
+
             result = {
                 'score': '3',
                 'good': '',
@@ -57,15 +41,14 @@ MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
                 'tip': ''
             }
 
-            for line in lines:
+            for line in text.split('
+'):
                 line = line.strip()
                 if ':' in line:
                     k, _, value = line.partition(':')
                     k = k.strip().upper()
                     value = value.strip()
-                    if k == 'TRANSCRIPT':
-                        result['transcript'] = value
-                    elif k == 'BAHO':
+                    if k == 'BAHO':
                         result['score'] = value
                     elif k == 'YAXSHI':
                         result['good'] = value
@@ -90,24 +73,26 @@ MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
         'tip': 'Iltimos keyinroq urinib koring'
     }
 
-
 async def check_voice_answer(english_question, uzbek_translation, voice_file_path, example_answer):
-    from config import GROQ_API_KEYS, GROQ_API_KEY
+    all_keys = GEMINI_API_KEYS if GEMINI_API_KEYS else [GEMINI_API_KEY]
 
-    all_keys = GROQ_API_KEYS if GROQ_API_KEYS else [GROQ_API_KEY]
+    with open(voice_file_path, 'rb') as f:
+        audio_data = f.read()
+    audio_base64 = base64.b64encode(audio_data).decode('utf-8')
 
     prompt = f"""You are a strict English grammar teacher for Uzbek students (A0-A2 level).
 The student was asked: "{english_question}"
-The student said: "{{transcript}}"
 
-Do these tasks in order:
-TASK 1: Check EVERY word for grammar mistakes. Look for:
+Listen to the student's voice and do the following:
+
+TASK 1: Write EXACTLY what the student said word by word.
+TASK 2: Check EVERY word for grammar mistakes. Look for:
 - Wrong pronoun (I instead of My, He instead of His)
 - Wrong verb form (go instead of goes, are instead of is)
 - Missing words (missing 'is', 'a', 'the')
 - Wrong word choice
 - Repeated words
-TASK 2: For EACH mistake found, write it like this:
+TASK 3: For EACH mistake found, write it like this:
 '[wrong]' -> '[correct]' : [why in Uzbek]
 
 Respond ONLY in this format:
@@ -124,32 +109,22 @@ RULE: If student made ANY mistake, XATO must NOT be empty."""
     last_error = None
     for key in all_keys:
         try:
-            client = Groq(api_key=key)
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
-            # Step 1: Transcribe audio with Whisper
-            with open(voice_file_path, 'rb') as f:
-                transcription = client.audio.transcriptions.create(
-                    file=("audio.ogg", f),
-                    model="whisper-large-v3",
-                )
-            transcript = transcription.text
+            response = model.generate_content([
+                prompt,
+                {
+                    "inline_data": {
+                        "mime_type": "audio/ogg",
+                        "data": audio_base64
+                    }
+                }
+            ])
 
-            # Step 2: Analyze transcript with llama
-            analysis_prompt = prompt.replace("{transcript}", transcript)
-
-            response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
-                messages=[
-                    {"role": "system", "content": "You are a strict English grammar teacher for Uzbek students."},
-                    {"role": "user", "content": analysis_prompt}
-                ],
-                temperature=0.7,
-                max_tokens=1024
-            )
-            text = response.choices[0].message.content.strip()
-
+            text = response.text.strip()
             result = {
-                'transcript': transcript,
+                'transcript': '',
                 'score': '3',
                 'good': '',
                 'mistake': '',
@@ -160,7 +135,8 @@ RULE: If student made ANY mistake, XATO must NOT be empty."""
             current_key = None
             current_value_lines = []
 
-            for line in text.split('\n'):
+            for line in text.split('
+'):
                 line = line.strip()
                 if not line:
                     continue
@@ -208,13 +184,11 @@ RULE: If student made ANY mistake, XATO must NOT be empty."""
         'tip': 'Iltimos keyinroq urinib koring'
     }
 
-
 def get_daily_question(topic):
-    """Ask Groq to generate 1 new speaking question on the given topic."""
-    try:
-        client = get_client()
+    """Generate 1 new speaking question on the given topic."""
+    all_keys = GEMINI_API_KEYS if GEMINI_API_KEYS else [GEMINI_API_KEY]
 
-        prompt = f"""Generate 1 simple English speaking question for Uzbek students aged 13-19 at A0-A2 level.
+    prompt = f"""Generate 1 simple English speaking question for Uzbek students aged 13-19 at A0-A2 level.
 Topic: {topic}
 
 Respond in this exact format (no extra text):
@@ -222,39 +196,39 @@ QUESTION: [question in English]
 UZBEK: [translation of the question in Uzbek]
 EXAMPLE: [a simple example answer in English, 1-2 sentences]"""
 
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[
-                {"role": "system", "content": "You are an English teacher creating simple questions for Uzbek students."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7,
-            max_tokens=256
-        )
-        text = response.choices[0].message.content
+    for key in all_keys:
+        try:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel("gemini-2.5-flash-lite")
 
-        lines = text.strip().split("\n")
-        english_question = ""
-        uzbek_translation = ""
-        example_answer = ""
+            response = model.generate_content(prompt)
+            text = response.text
 
-        for line in lines:
-            if line.startswith("QUESTION:"):
-                english_question = line.replace("QUESTION:", "").strip()
-            elif line.startswith("UZBEK:"):
-                uzbek_translation = line.replace("UZBEK:", "").strip()
-            elif line.startswith("EXAMPLE:"):
-                example_answer = line.replace("EXAMPLE:", "").strip()
+            lines = text.strip().split("
+")
+            english_question = ""
+            uzbek_translation = ""
+            example_answer = ""
 
-        return {
-            "english_question": english_question,
-            "uzbek_translation": uzbek_translation,
-            "example_answer": example_answer
-        }
-    except Exception as e:
-        return {
-            "english_question": "",
-            "uzbek_translation": "",
-            "example_answer": "",
-            "error": "Kechirasiz, savol yaratib bo'lmayapti. Iltimos, keyinroq urinib ko'ring."
-        }
+            for line in lines:
+                if line.startswith("QUESTION:"):
+                    english_question = line.replace("QUESTION:", "").strip()
+                elif line.startswith("UZBEK:"):
+                    uzbek_translation = line.replace("UZBEK:", "").strip()
+                elif line.startswith("EXAMPLE:"):
+                    example_answer = line.replace("EXAMPLE:", "").strip()
+
+            return {
+                "english_question": english_question,
+                "uzbek_translation": uzbek_translation,
+                "example_answer": example_answer
+            }
+        except Exception:
+            continue
+
+    return {
+        "english_question": "",
+        "uzbek_translation": "",
+        "example_answer": "",
+        "error": "Kechirasiz, savol yaratib bo'lmayapti. Iltimos, keyinroq urinib ko'ring."
+    }
