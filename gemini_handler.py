@@ -41,8 +41,7 @@ MASLAHAT: [one specific tip in Uzbek based on their main mistake]"""
                 'tip': ''
             }
 
-            for line in text.split('
-'):
+            for line in text.split(''):
                 line = line.strip()
                 if ':' in line:
                     k, _, value = line.partition(':')
