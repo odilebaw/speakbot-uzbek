@@ -134,8 +134,7 @@ RULE: If student made ANY mistake, XATO must NOT be empty."""
             current_key = None
             current_value_lines = []
 
-            for line in text.split('
-'):
+            for line in text.split(''):
                 line = line.strip()
                 if not line:
                     continue
@@ -203,8 +202,7 @@ EXAMPLE: [a simple example answer in English, 1-2 sentences]"""
             response = model.generate_content(prompt)
             text = response.text
 
-            lines = text.strip().split("
-")
+            lines = text.strip().split("")
             english_question = ""
             uzbek_translation = ""
             example_answer = ""
